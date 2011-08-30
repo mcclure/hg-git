@@ -103,6 +103,13 @@ def gclear(ui, repo):
     repo.ui.status(_("clearing out the git cache data\n"))
     git = GitHandler(repo, ui)
     git.clear()
+	
+def gsummary(ui, repo):
+    ctx = repo[None]
+    parents = ctx.parents()
+    git = GitHandler(repo, ui)
+    for p in parents:
+        repo.ui.status(_('git-parent: %s\n') % git.map_git_get(p.hex()))
 
 def git_cleanup(ui, repo):
     new_map = []
@@ -179,6 +186,8 @@ cmdtable = {
         (gexport, [], _('hg gexport')),
   "gclear":
       (gclear, [], _('Clears out the Git cached data')),
+  "gsummary":
+      (gsummary, [], _('Shows current Git hash number')),
   "git-cleanup": (git_cleanup, [], _(
         "Cleans up git repository after history editing"))
 }
