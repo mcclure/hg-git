@@ -82,24 +82,33 @@ def generate_repo_subclass(baseclass):
         def lookup(self, key): # Allow for update, diff etc. against git rev #s
             try:
                 return super(hgrepo, self).lookup(key)
-            except error.RepoLookupError:
+            except error.RepoLookupError as notfound:
                 if not key:             # If key is nonempty...
-                    raise
+                    raise notfound
                 if key[0] == 'g':       # To allow revs like g1144
                     key = key[1:]
                 if not key:             # If key is STILL nonempty...
-                    raise
+                    raise notfound
                 found = None
                 git = GitHandler(self, self.ui)
                 for gitsha, hgsha in git._map_git.iteritems():
                     if gitsha.startswith(key):
-                        if found: # If we find more than one key...
-                            raise error.LookupError(key, "hg-git",
-                                _('ambiguous identifier'))
-                        else:
-                            found = super(hgrepo, self).lookup(hgsha)
+                        try:
+                            print hgsha
+                            newfound = super(hgrepo, self).lookup(hgsha)
+                            if found: # If we find more than one key...
+                                raise error.LookupError(key, "hg-git",
+                                    _('ambiguous identifier'))
+                            else:
+                                found = newfound
+                        # hg-git knows about some revisions that hg doesn't. If these come
+                        # up in _map_git, super().lookup() will throw a RepoLookupError.
+                        # In this case we just pretend we never saw the revision.
+                        except error.RepoLookupError:
+                            pass
+                            
                 if found:
                     return found
-                raise # If still here, really nothing found
+                raise notfound # If still here, really nothing found
 
     return hgrepo
