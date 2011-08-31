@@ -1,10 +1,11 @@
 import os
 
 from mercurial.node import bin
+from mercurial import error
+from mercurial.i18n import _
 
 from git_handler import GitHandler
 from gitrepo import gitrepo
-
 
 def generate_repo_subclass(baseclass):
     class hgrepo(baseclass):
@@ -77,5 +78,28 @@ def generate_repo_subclass(baseclass):
                     self._tagstypecache[tag] = 'git'
 
             return tagscache
+            
+        def lookup(self, key): # Allow for update, diff etc. against git rev #s
+            try:
+                return super(hgrepo, self).lookup(key)
+            except error.RepoLookupError:
+                if not key:             # If key is nonempty...
+                    raise
+                if key[0] == 'g':       # To allow revs like g1144
+                    key = key[1:]
+                if not key:             # If key is STILL nonempty...
+                    raise
+                found = None
+                git = GitHandler(self, self.ui)
+                for gitsha, hgsha in git._map_git.iteritems():
+                    if gitsha.startswith(key):
+                        if found: # If we find more than one key...
+                            raise error.LookupError(key, "hg-git",
+                                _('ambiguous identifier'))
+                        else:
+                            found = super(hgrepo, self).lookup(hgsha)
+                if found:
+                    return found
+                raise # If still here, really nothing found
 
     return hgrepo
