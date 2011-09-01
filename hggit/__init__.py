@@ -17,6 +17,7 @@ Try hg clone git:// or hg clone git+ssh://
 
 import inspect
 import os
+import re
 
 from mercurial import bundlerepo
 from mercurial import commands
@@ -85,6 +86,27 @@ def safebranchrevs(orig, lrepo, repo, branches, revs):
     return revs, co
 if getattr(hg, 'addbranchrevs', False):
     extensions.wrapfunction(hg, 'addbranchrevs', safebranchrevs)
+
+changeset_re = None
+
+def uisetup(ui):
+    class ext_ui(ui.__class__):
+        def write(self, *args, **kwargs):
+            super(ext_ui, self).write(*args, **kwargs)
+            if kwargs.has_key('label') and kwargs['label'] == 'log.changeset' and len(args):
+                global changeset_re
+                if not changeset_re:
+                    changeset_re = re.compile('(\d+):\w+(\s*)$')
+                match = changeset_re.search(args[0])
+                if match:
+                    rev, terminator = match.group(1,2)
+                    if terminator == '\n': # hg log, etc
+                        output = _("git-rev:     %s\n")
+                    else:                  # hg sum
+                        output = "git:%s "
+                    super(ext_ui, self).write(output % (rev), label='log.gitchangeset')
+
+    ui.__class__ = ext_ui
 
 def reposetup(ui, repo):
     if not isinstance(repo, gitrepo.gitrepo):
