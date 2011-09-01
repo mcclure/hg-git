@@ -88,23 +88,25 @@ if getattr(hg, 'addbranchrevs', False):
     extensions.wrapfunction(hg, 'addbranchrevs', safebranchrevs)
 
 changeset_re = None
+cached_repo = None
 
 def uisetup(ui):
     class ext_ui(ui.__class__):
         def write(self, *args, **kwargs):
             super(ext_ui, self).write(*args, **kwargs)
-            if kwargs.has_key('label') and kwargs['label'] == 'log.changeset' and len(args):
+            if kwargs.has_key('label') and kwargs['label'] == 'log.changeset' and len(args) and cached_repo:
                 global changeset_re
                 if not changeset_re:
                     changeset_re = re.compile('(\d+):\w+(\s*)$')
                 match = changeset_re.search(args[0])
                 if match:
                     rev, terminator = match.group(1,2)
+                    node = changelog.node(key)
                     if terminator == '\n': # hg log, etc
                         output = _("git-rev:     %s\n")
                     else:                  # hg sum
                         output = "git:%s "
-                    super(ext_ui, self).write(output % (rev), label='log.gitchangeset')
+                    super(ext_ui, self).write(output % (node), label='log.gitchangeset')
 
     ui.__class__ = ext_ui
 
@@ -112,6 +114,7 @@ def reposetup(ui, repo):
     if not isinstance(repo, gitrepo.gitrepo):
         klass = hgrepo.generate_repo_subclass(repo.__class__)
         repo.__class__ = klass
+    cached_repo = repo
 
 def gimport(ui, repo, remote_name=None):
     git = GitHandler(repo, ui)
