@@ -89,6 +89,7 @@ if getattr(hg, 'addbranchrevs', False):
 
 changeset_re = None
 cached_repo = None
+cached_git = None
 
 def uisetup(ui):
     class ext_ui(ui.__class__):
@@ -96,17 +97,28 @@ def uisetup(ui):
             super(ext_ui, self).write(*args, **kwargs)
             if kwargs.has_key('label') and kwargs['label'] == 'log.changeset' and len(args) and cached_repo:
                 global changeset_re
+                global cached_git
                 if not changeset_re:
                     changeset_re = re.compile('(\d+):\w+(\s*)$')
                 match = changeset_re.search(args[0])
                 if match:
                     rev, terminator = match.group(1,2)
-                    node = changelog.node(key)
-                    if terminator == '\n': # hg log, etc
-                        output = _("git-rev:     %s\n")
-                    else:                  # hg sum
-                        output = "git:%s "
-                    super(ext_ui, self).write(output % (node), label='log.gitchangeset')
+                    from mercurial.templatefilters import hexfilter, short
+                    hgsha = cached_repo.lookup(int(rev)) # Ints are efficient on lookup
+                    if (hgsha):
+                        hgsha = hexfilter(hgsha)
+                        if not cached_git:
+                            cached_git = GitHandler(cached_repo, self)
+                        gitsha = cached_git.map_git_get(hgsha)
+                    else: # Currently this case is hit when you do hg outgoing. I'm not sure why.
+                        gitsha = None
+                    
+                    if gitsha:
+                        if terminator == '\n': # hg log, etc
+                            output = _("git-rev:     %s\n")
+                        else:                  # hg sum
+                            output = "git:%s "
+                        super(ext_ui, self).write(output % (short(gitsha)), label='log.gitchangeset')
 
     ui.__class__ = ext_ui
 
@@ -114,6 +126,8 @@ def reposetup(ui, repo):
     if not isinstance(repo, gitrepo.gitrepo):
         klass = hgrepo.generate_repo_subclass(repo.__class__)
         repo.__class__ = klass
+        
+    global cached_repo
     cached_repo = repo
 
 def gimport(ui, repo, remote_name=None):
@@ -134,7 +148,7 @@ def gsummary(ui, repo):
     parents = ctx.parents()
     git = GitHandler(repo, ui)
     for p in parents:
-        repo.ui.status(_('git-parent: %s\n') % git.map_git_get(p.hex()))
+        repo.ui.status(_('git-rev: %s\n') % git.map_git_get(p.hex()))
 
 def git_cleanup(ui, repo):
     new_map = []
