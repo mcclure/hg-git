@@ -87,14 +87,16 @@ def safebranchrevs(orig, lrepo, repo, branches, revs):
 if getattr(hg, 'addbranchrevs', False):
     extensions.wrapfunction(hg, 'addbranchrevs', safebranchrevs)
 
-changeset_re = None
-cached_repo = None
-cached_git = None
+changeset_re = None # Cached regular expression for a changeset string
+cached_repo = None  # Cached copy of the repo sent to reposetup
+cached_git = None   # Cached githandler for cached_repo
 
 def uisetup(ui):
     class ext_ui(ui.__class__):
+        # Extend the UI class so that when it prints an hg changeset hash, it also prints a git changeset.
         def write(self, *args, **kwargs):
             super(ext_ui, self).write(*args, **kwargs)
+            # Changesets are printed twice in the current hg code, always with label log.changeset
             if kwargs.has_key('label') and kwargs['label'] == 'log.changeset' and len(args) and cached_repo:
                 global changeset_re
                 global cached_git
@@ -102,6 +104,8 @@ def uisetup(ui):
                     changeset_re = re.compile('(\d+):\w+(\s*)$')
                 match = changeset_re.search(args[0])
                 if match:
+                    # Parse out from the changeset string: The numeric local rev, and the line terminator
+                    # (So that we know if we need to print the git revision with a newline or not)
                     rev, terminator = match.group(1,2)
                     from mercurial.templatefilters import hexfilter, short
                     hgsha = cached_repo.lookup(int(rev)) # Ints are efficient on lookup
@@ -226,7 +230,7 @@ cmdtable = {
   "gclear":
       (gclear, [], _('Clears out the Git cached data')),
   "gsummary":
-      (gsummary, [], _('Shows current Git hash number')),
+      (gsummary, [], _('Shows current full Git revision hash')),
   "git-cleanup": (git_cleanup, [], _(
         "Cleans up git repository after history editing"))
 }

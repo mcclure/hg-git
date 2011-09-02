@@ -91,10 +91,9 @@ def generate_repo_subclass(baseclass):
                     raise notfound
                 found = None
                 git = GitHandler(self, self.ui)
-                for gitsha, hgsha in git._map_git.iteritems():
+                for gitsha, hgsha in git._map_git.iteritems(): # Check all git revs
                     if gitsha.startswith(key):
                         try:
-                            print hgsha
                             newfound = super(hgrepo, self).lookup(hgsha)
                             if found: # If we find more than one key...
                                 raise error.LookupError(key, "hg-git",
