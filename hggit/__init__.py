@@ -107,7 +107,12 @@ def uisetup(ui):
                     # Parse out from the changeset string: The numeric local rev, and the line terminator
                     # (So that we know if we need to print the git revision with a newline or not)
                     rev, terminator = match.group(1,2)
-                    from mercurial.templatefilters import hexfilter, short
+                    try:        # Works in Mercurial 1.9.x
+                        from mercurial.templatefilters import hexfilter, short
+                    except:     # Works in Mercurial 1.8.x
+                        from mercurial.templatefilters import filters
+                        hexfilter = filters["hex"]
+                        short = filters["short"]
                     hgsha = cached_repo.lookup(int(rev)) # Ints are efficient on lookup
                     if (hgsha):
                         hgsha = hexfilter(hgsha)
