@@ -1,16 +1,27 @@
 #!/usr/bin/env python
 #
-# run-tests.py - Run a set of tests on Mercurial
+# virtualenv-setup.py
 #
 # Created 2011 by A. McClure, you may consider this file public domain
 #
+# This script creates a series of virtualenvs, with the specified versions of mercurial and dulwich
+# installed in each. After this you can run your newly created mercurials like envs/1.8/bin/hg
+# The intent is to allow you to rapidly test hg-git changes in several different versions of hg quickly.
+#
+# Before running this, you should have a system with hg, hg-git, and virtualenv already configured.
+# Notice the script does NOT set up hg-git in the virtualenvs; you should set up your own ~/.hgrc to
+# point to the version of hg-git you want to test.
+#
+# TODO: Add a cmd to invoke ./run-tests.py for all envs and prepare some kind of report on the results.
 
 import sys
 import os
 import subprocess
 
 args = sys.argv[1:]
-do_build = 'build' in args or 'run' in args
+owd = os.getcwd()
+do_clean = 'clean' in args
+do_build = 'build' in args
 
 versions = ['1.9.2', '1.9', '1.8.4', '1.8']
 
@@ -21,6 +32,8 @@ scratch_path = "ves_scratch/"
 mercurial_path = scratch_path + "hg"
 dulwich_path = scratch_path + "dulwich"
 baserev_path = "envs/"
+
+known_env = []
 
 # At what path would an env with this hg tag be stored?
 def rev_path(rev):
@@ -50,16 +63,40 @@ def ensure_env(version):
         ensure_mercurial()
         ensure_dulwich()
         subprocess.call(["mkdir", "-p", baserev_path])
-        print("\t-- Making virtualenv" % version)
+        
+        print("\t-- Making virtualenv")
         subprocess.call(["virtualenv", path])
-        print("\t-- Loading appropriate mercurial" % version)
+        
+        env_python = "../../" + path + "/bin/python"
+        print("\t-- Installing dulwich")
+        os.chdir(dulwich_path)
+        subprocess.call([env_python, "setup.py", "install"])
+        os.chdir(owd)
+        
+        print("\t-- Loading appropriate mercurial")
         subprocess.call(["hg", "-R", mercurial_path, "up", version])
-        # TODO: Install mercurial and Dulwich to new env.
+        print("\t-- Installing mercurial")
+        os.chdir(mercurial_path)
+        subprocess.call([env_python, "setup.py", "install"])
+        os.chdir(owd)
+    known_env.append(path)
 
 # Act
-if do_build:
+if do_clean:
+    # The correct thing to do is import shutil; shutil.rmtree()
+    # But that's scary! For now I'm going to make the user copy and paste this themselves.
+    print("\tEnter these:")
+    print("rm -rf " + scratch_path)
+    print("rm -rf " + baserev_path)
+elif do_build:
     for version in versions:
         ensure_env(version)
+    
+    print("\t-- Your new mercurials:\n")
+    known_env.sort()
+    for env in known_env:
+        print(owd + "/" + env + "/bin/hg")
 else:
     print("Usage:")
+    print("\t./virtualenv-setup.py clean")
     print("\t./virtualenv-setup.py build")
