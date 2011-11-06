@@ -38,8 +38,9 @@ from git_handler import GitHandler
 
 # support for `hg clone git://github.com/defunkt/facebox.git`
 # also hg clone git+ssh://git@github.com/schacon/simplegit.git
-hg.schemes['git'] = gitrepo
-hg.schemes['git+ssh'] = gitrepo
+_gitschemes = ('git', 'git+ssh', 'git+http', 'git+https')
+for _scheme in _gitschemes:
+    hg.schemes[_scheme] = gitrepo
 
 # support for `hg clone localgitrepo`
 _oldlocal = hg.schemes['file']
@@ -71,7 +72,7 @@ hg.schemes['file'] = _local
 
 hgdefaultdest = hg.defaultdest
 def defaultdest(source):
-    for scheme in ('git', 'git+ssh'):
+    for scheme in _gitschemes:
         if source.startswith('%s://' % scheme) and source.endswith('.git'):
             source = source[:-4]
             break
@@ -185,6 +186,10 @@ try:
         kwname = 'onlyheads'
     def findoutgoing(orig, local, remote, *args, **kwargs):
         if isinstance(remote, gitrepo.gitrepo):
+            hgver = hg.util.version()
+            if hgver >= '1.8.9' or (hgver > '1.8' and '+' in hgver):
+                raise hgutil.Abort(
+                    'hg-git outgoing support is broken on hg 1.9.x')
             # clean up this cruft when we're 1.7-only, remoteheads and
             # the return value change happened between 1.6 and 1.7.
             kw = {}
@@ -213,7 +218,10 @@ except ImportError:
 
 def getremotechanges(orig, ui, repo, other, *args, **opts):
     if isinstance(other, gitrepo.gitrepo):
-        revs = opts.get('onlyheads', opts.get('revs'))
+        if args:
+            revs = args[0]
+        else:
+            revs = opts.get('onlyheads', opts.get('revs'))
         git = GitHandler(repo, ui)
         r, c, cleanup = git.getremotechanges(other, revs)
         # ugh. This is ugly even by mercurial API compatibility standards

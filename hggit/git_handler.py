@@ -13,6 +13,11 @@ try:
     from mercurial import commands
 except ImportError:
     from hgext import bookmarks
+try:
+    from mercurial.error import RepoError
+except ImportError:
+    from mercurial.repo import RepoError
+
 from mercurial.i18n import _
 from mercurial.node import hex, bin, nullid
 from mercurial import context, util as hgutil
@@ -113,7 +118,10 @@ class GitHandler(object):
         file = self.repo.opener(self.mapfile, 'w+', atomictemp=True)
         for hgsha, gitsha in sorted(self._map_hg.iteritems()):
             file.write("%s %s\n" % (gitsha, hgsha))
-        file.rename()
+        # If this complains that NoneType is not callable, then
+        # atomictempfile no longer has either of rename (pre-1.9) or
+        # close (post-1.9)
+        getattr(file, 'rename', getattr(file, 'close', None))()
 
     def load_tags(self):
         self.tags = {}
@@ -127,7 +135,10 @@ class GitHandler(object):
         for name, sha in sorted(self.tags.iteritems()):
             if not self.repo.tagtype(name) == 'global':
                 file.write("%s %s\n" % (sha, name))
-        file.rename()
+        # If this complains that NoneType is not callable, then
+        # atomictempfile no longer has either of rename (pre-1.9) or
+        # close (post-1.9)
+        getattr(file, 'rename', getattr(file, 'close', None))()
 
     ## END FILE LOAD AND SAVE METHODS
 
@@ -135,6 +146,7 @@ class GitHandler(object):
 
     def import_commits(self, remote_name):
         self.import_git_objects(remote_name)
+        self.update_hg_bookmarks(self.git.get_refs())
         self.save_map()
 
     def fetch(self, remote, heads):
@@ -337,24 +349,27 @@ class GitHandler(object):
         self.swap_out_encoding(oldenc)
         return commit.id
 
+    def get_valid_git_username_email(self, name):
+        return name.lstrip('< ').rstrip('> ')
+
     def get_git_author(self, ctx):
         # hg authors might not have emails
         author = ctx.user()
 
         # check for git author pattern compliance
-        regex = re.compile('^(.*?) \<(.*?)\>(.*)$')
+        regex = re.compile('^(.*?) ?\<(.*?)(?:\>(.*))?$')
         a = regex.match(author)
 
         if a:
             name = a.group(1)
             email = a.group(2)
-            if len(a.group(3)) > 0:
+            if a.group(3) != None and len(a.group(3)) != 0:
                 name += ' ext:(' + urllib.quote(a.group(3)) + ')'
-            author = name + ' <' + email + '>'
+            author = self.get_valid_git_username_email(name) + ' <' + self.get_valid_git_username_email(email) + '>'
         elif '@' in author:
-            author = author + ' <' + author + '>'
+            author = self.get_valid_git_username_email(author) + ' <' + self.get_valid_git_username_email(author) + '>'
         else:
-            author = author + ' <none@none>'
+            author = self.get_valid_git_username_email(author) + ' <none@none>'
 
         if 'author' in ctx.extra():
             author = "".join(apply_delta(author, ctx.extra()['author']))
@@ -1079,5 +1094,17 @@ class GitHandler(object):
                         transportpath = path
 
                 return transport(host, thin_packs=False, port=port), transportpath
+
+        httpclient = getattr(client, 'HttpGitClient', None)
+
+        if uri.startswith('git+http://') or uri.startswith('git+https://'):
+            uri = uri[4:]
+
+        if uri.startswith('http://') or uri.startswith('https://'):
+            if not httpclient:
+                raise RepoError('git via HTTP requires dulwich 0.8.1 or later')
+            else:
+                return client.HttpGitClient(uri, thin_packs=False), uri
+
         # if its not git or git+ssh, try a local url..
         return client.SubprocessGitClient(thin_packs=False), uri
